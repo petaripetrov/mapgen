@@ -1,26 +1,35 @@
+use std::{
+    default,
+    f32::consts::{FRAC_PI_4, PI},
+};
+
 use bevy::{
     app::{Plugin, Update},
     asset::{Assets, Handle},
-    color::Color,
+    color::{palettes::css::{GREEN, RED}, Color},
     core_pipeline::core_2d::Camera2d,
-    ecs::system::{Commands, Query, Res, ResMut, Resource},
-    math::{
-        primitives::Circle, Vec3,
+    ecs::{
+        event::{self, EventReader, EventWriter},
+        system::{Commands, Res, ResMut, Resource},
     },
-    render::mesh::{Mesh, Mesh2d, MeshBuilder, Meshable},
+    gizmos::gizmos::Gizmos,
+    log::info,
+    math::{primitives::Circle, vec3, Isometry2d, UVec2, Vec3, Vec3Swizzles},
+    render::{
+        camera::{Camera, OrthographicProjection, Projection, Viewport},
+        mesh::{Mesh, Mesh2d, MeshBuilder, Meshable},
+    },
     sprite::{ColorMaterial, MeshMaterial2d},
     state::state::OnEnter,
     transform::components::Transform,
-    window::Window,
 };
-use bevy_egui::egui::emath::Numeric;
-use rand::{
-    distr::Uniform,
-    Rng, SeedableRng,
-};
+use rand::{distr::Uniform, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
-use crate::{ui::MapgenSettings, DemoState};
+use crate::{
+    ui::{MapgenSettings, NumCellsUpdated},
+    DemoState,
+};
 
 #[derive(Resource)]
 struct Points(Vec<Vec3>);
@@ -38,7 +47,7 @@ impl Plugin for MapgenPlugin {
 
         app.insert_resource(Points(Vec::new()));
         app.insert_resource(RNG(seeded_rng));
-        app.add_systems(Update, draw_circles);
+        app.add_systems(Update, (draw_circles, gen_circles));
         // app.add
     }
 }
@@ -50,16 +59,62 @@ fn draw_circles(
     point_res: Res<Points>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    mut gizmos: Gizmos,
 ) {
     const CIRCLE: Circle = Circle { radius: 5.0 };
     let material: Handle<ColorMaterial> = materials.add(Color::WHITE);
 
     for position in &point_res.0 {
-        commands.spawn((
-            Mesh2d(meshes.add(CIRCLE.mesh().build())),
-            MeshMaterial2d(material.clone()),
-            Transform::from_translation(*position),
-        ));
+        // commands.spawn((
+        //     Mesh2d(meshes.add(CIRCLE.mesh().build())),
+        //     MeshMaterial2d(material.clone()),
+        //     Transform::from_translation(*position),
+        // ));
+        gizmos.arc_2d(position.xy(), 2.0 * PI, 0.05, RED);
+    }
+}
+
+fn gen_circles(
+    mut rng_src: ResMut<RNG>,
+    mut point_res: ResMut<Points>,
+    map_settings: Res<MapgenSettings>,
+    mut events: EventReader<NumCellsUpdated>,
+) {
+    for _ in events.read() {
+        // TODO revisit
+        // let n = map_settings.num_cells;
+        // let rng = &mut rng_src.0;
+
+        // let uniform = Uniform::<f32>::new(-1.0, 1.0); // move this to the settings so its only created once
+        // info!("gen_circles called");
+
+        // if let Ok(distr) = uniform {
+        //     let x_iter = rng.clone().sample_iter(distr);
+        //     let y_iter = rng.sample_iter(distr).skip(n);
+
+        //     let points_iter = x_iter
+        //         .zip(y_iter)
+        //         .take(n)
+        //         .map(|(x, y)| Vec3::new(x * 300.0, y * 300.0, 0.0));
+
+        //     point_res.0 = points_iter.collect::<Vec<Vec3>>();
+        // }
+
+        let GRID_SIZE: usize = 25;
+        let mut points = Vec::<Vec3>::new();
+        const JITTER: f32 = 5.0;
+
+        for x in 0..GRID_SIZE {
+            for y in 0..GRID_SIZE {
+                points.push(Vec3 {
+                    x: (x as f32) + JITTER,
+                    y: (y as f32) + JITTER,
+                    z: 0.0,
+                });
+            }
+        }
+
+        point_res.0 = points;
     }
 }
 
@@ -85,30 +140,28 @@ fn setup(
     mut commands: Commands,
     mut rng_src: ResMut<RNG>,
     mut point_res: ResMut<Points>,
-    map_settings: Res<MapgenSettings>
+    map_settings: Res<MapgenSettings>,
     // mut meshes: ResMut<Assets<Mesh>>,
     // mut materials: ResMut<Assets<ColorMaterial>>,
-    // mut gizmos: Gizmos,
+    mut events: EventWriter<NumCellsUpdated>,
 ) {
-    let n = map_settings.num_cells;
-    let rng = &mut rng_src.0;
+    let mut translation = Transform::from_translation(vec3(10.0, 10.0, 0.0));
+    translation.scale = vec3(0.1, 0.1, 0.1);
 
-    commands.spawn(Camera2d);
+    commands.spawn((
+        Camera2d,
+        OrthographicProjection {
+            scale: 0.4,
+            ..OrthographicProjection::default_2d()
+        },
+        Transform {
+            translation: vec3(11.0, 17.0, 0.0),
+            scale: vec3(0.1, 0.1, 1.0),
+            ..Default::default()
+        }
+    ));
 
-    let uniform = Uniform::<f32>::new(-1.0, 1.0);
-
-    if let Ok(distr) = uniform {
-        let x_iter = rng.clone().sample_iter(distr);
-        let y_iter = rng.sample_iter(distr).skip(n);
-
-        let points_iter = x_iter
-            .zip(y_iter)
-            .take(n)
-            .map(|(x, y)| Vec3::new(x * 300.0, y * 300.0, 0.0));
-
-        point_res.0.extend(points_iter);
-    }
-
+    events.send_default();
     // info!("{:?}", point_res.0.len());
 
     // let shapes = [

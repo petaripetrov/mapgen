@@ -5,12 +5,16 @@ use std::{
 };
 
 use bevy::{
-    app::{Plugin, Update}, ecs::{entity::Entity, event::Event}, log::{error, info, warn}, prelude::{
+    app::{Plugin, Update},
+    ecs::{entity::Entity, event::{Event, EventWriter}},
+    log::{error, info, warn},
+    prelude::{
         in_state, on_event, AppExtStates, EventReader, IntoSystemConfigs, NextState, Res, ResMut,
         Resource, State, StateTransitionEvent, States,
-    }, window::WindowCloseRequested
+    },
+    window::WindowCloseRequested,
 };
-use bevy_egui::{egui, EguiContexts, EguiPlugin};
+use bevy_egui::{egui, EguiContexts};
 
 use crate::DemoState;
 
@@ -48,15 +52,15 @@ struct UIState {
     light: LightSettings,
 }
 
-#[derive(Event)]
-pub struct NumCellsUpdated(Entity);
+#[derive(Event, Default)]
+pub struct NumCellsUpdated;
 
 pub struct UIPlugin;
 
 impl Plugin for UIPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         // Init EGUI
-        app.add_plugins(EguiPlugin);
+        // app.add_plugins(EguiPlugin);
         app.add_event::<NumCellsUpdated>();
         let file = File::open("ui_state.json");
 
@@ -74,7 +78,7 @@ impl Plugin for UIPlugin {
                     app.insert_state(state.demo);
                 }
                 Err(_) => {
-                    // TODO Honestly just merge this and main 
+                    // TODO Honestly just merge this and main
                     warn!("Could not find UI State settings. Initializing with empty state");
                     app.init_resource::<MaterialSettings>();
                     app.init_resource::<LightSettings>();
@@ -88,18 +92,23 @@ impl Plugin for UIPlugin {
             warn!("Could not open UI state settings. Initiaizing with empty state");
             app.init_resource::<MaterialSettings>();
             app.init_resource::<LightSettings>();
+            app.init_resource::<MapgenSettings>();
+
+            app.init_state::<DemoState>();
             app.init_state::<RendererState>();
         }
 
         app.add_systems(
             Update,
             (
-                spawn_ui.before(spawn_basic_ui),
+                // spawn_ui.before(spawn_basic_ui),
                 log_transitions,
-
-                (spawn_light_ui, spawn_basic_ui.run_if(in_state(RendererState::Basic))).run_if(in_state(DemoState::Renderer)),
-                (spawn_mapgen_ui).run_if(in_state(DemoState::Mapgen)),
-
+                // (
+                //     spawn_light_ui,
+                //     spawn_basic_ui.run_if(in_state(RendererState::Basic)),
+                // )
+                //     .run_if(in_state(DemoState::Renderer)),
+                // (spawn_mapgen_ui).run_if(in_state(DemoState::Mapgen)),
                 save_ui_state.run_if(on_event::<WindowCloseRequested>),
             ),
         );
@@ -123,28 +132,23 @@ fn spawn_ui(
             .vscroll(false)
             .resizable(true)
             .show(context, |ui| {
-
                 egui::ComboBox::from_label("Demo")
-                .selected_text(format!("{:?}", curr_state))
-                .show_ui(ui, |ui| {
-                    if ui
-                        .selectable_value(
-                            &mut curr_state,
-                            DemoState::Renderer,
-                            "Renderer",
-                        )
-                        .changed()
-                    {
-                        demo_trans.set(DemoState::Renderer);
-                    }
+                    .selected_text(format!("{:?}", curr_state))
+                    .show_ui(ui, |ui| {
+                        if ui
+                            .selectable_value(&mut curr_state, DemoState::Renderer, "Renderer")
+                            .changed()
+                        {
+                            demo_trans.set(DemoState::Renderer);
+                        }
 
-                    if ui
-                        .selectable_value(&mut curr_state, DemoState::Mapgen, "Mapgen")
-                        .changed()
-                    {
-                        demo_trans.set(DemoState::Mapgen);
-                    }
-                });
+                        if ui
+                            .selectable_value(&mut curr_state, DemoState::Mapgen, "Mapgen")
+                            .changed()
+                        {
+                            demo_trans.set(DemoState::Mapgen);
+                        }
+                    });
 
                 match curr_state {
                     DemoState::Renderer => {
@@ -164,21 +168,29 @@ fn spawn_ui(
                                 }
 
                                 if ui
-                                    .selectable_value(&mut renderer_state, RendererState::Toon, "Toon")
+                                    .selectable_value(
+                                        &mut renderer_state,
+                                        RendererState::Toon,
+                                        "Toon",
+                                    )
                                     .changed()
                                 {
                                     render_trans.set(RendererState::Toon);
                                 }
 
                                 if ui
-                                    .selectable_value(&mut renderer_state, RendererState::Pbr, "PBR")
+                                    .selectable_value(
+                                        &mut renderer_state,
+                                        RendererState::Pbr,
+                                        "PBR",
+                                    )
                                     .changed()
                                 {
                                     render_trans.set(RendererState::Pbr);
                                 }
                             });
                     }
-                    DemoState::Mapgen => {},
+                    DemoState::Mapgen => {}
                 }
             });
     }
@@ -220,24 +232,23 @@ fn spawn_light_ui(mut egui_context: EguiContexts, mut light: ResMut<LightSetting
     }
 }
 
-
-
-fn spawn_mapgen_ui(mut egui_context: EguiContexts, mut mapgen_settings: ResMut<MapgenSettings>) {
+fn spawn_mapgen_ui(mut egui_context: EguiContexts, mut mapgen_settings: ResMut<MapgenSettings>, mut events: EventWriter<NumCellsUpdated>) {
     if let Some(context) = egui_context.try_ctx_mut() {
         egui::Window::new("Mapgen controls")
             .vscroll(false)
             .resizable(true)
             .show(context, |ui| {
                 let settings = mapgen_settings.as_mut();
-                let mut parsed_num_cells = settings.num_cells.to_string();
-                
-                ui.label("Number of cells");
-                
-                if ui.text_edit_singleline(&mut parsed_num_cells).changed() {
-                    if let Ok(num) = parsed_num_cells.parse::<usize>() {
-                        settings.num_cells = num;
-                    } 
-                }
+
+                ui.label("Num of cells");
+
+                ui.horizontal(|ui| {
+                    ui.add(egui::DragValue::new(&mut settings.num_cells));
+
+                    if ui.button("Regen cells").clicked() {
+                        events.send_default();
+                    }
+                })
             });
     }
 }
