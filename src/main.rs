@@ -1,37 +1,32 @@
-mod camera;
-mod ui;
-
 mod mapgen;
-mod renderers;
+mod state;
 
 use bevy::{prelude::*, window::PrimaryWindow};
 
-use bevy_inspector_egui::{bevy_egui::{EguiContext, EguiPlugin}, egui};
-use mapgen::MapgenPlugin;
-use renderers::RenderersPlugin;
+use bevy_inspector_egui::{
+    bevy_egui::{EguiContext, EguiPlugin},
+    egui,
+};
+use mapgen::{CellMap, MapgenPlugin};
 use serde::{Deserialize, Serialize};
-use ui::UIPlugin;
 
 #[derive(Default, States, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DemoState {
     #[default]
     Renderer,
-    Mapgen
+    Mapgen,
 }
 
 fn main() {
     App::new()
         .add_plugins((
             DefaultPlugins,
-            UIPlugin,
             EguiPlugin,
-            RenderersPlugin,
             MapgenPlugin,
             bevy_inspector_egui::DefaultInspectorConfigPlugin,
-            
         ))
         .init_state::<DemoState>()
-        .add_systems(Update, (inspector_ui))
+        .add_systems(Update, inspector_ui)
         .run();
 }
 
