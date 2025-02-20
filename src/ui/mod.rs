@@ -6,6 +6,7 @@ use std::{
 
 use bevy::{
     app::{Plugin, Update},
+    ecs::{entity::Entity, event::{Event, EventWriter}},
     log::{error, info, warn},
     prelude::{
         in_state, on_event, AppExtStates, EventReader, IntoSystemConfigs, NextState, Res, ResMut,
@@ -13,7 +14,9 @@ use bevy::{
     },
     window::WindowCloseRequested,
 };
-use bevy_egui::{egui, EguiContexts, EguiPlugin};
+use bevy_egui::{egui, EguiContexts};
+
+use crate::DemoState;
 
 #[derive(Default, States, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum RendererState {
@@ -34,19 +37,31 @@ pub struct LightSettings {
     pub intensity: f32,
 }
 
+#[derive(Default, Resource, Serialize, Deserialize, Clone, Copy)]
+pub struct MapgenSettings {
+    pub num_cells: usize,
+}
+
 #[derive(Default, Serialize, Deserialize)]
 struct UIState {
+    demo: DemoState,
     renderer: RendererState,
+
+    mapgen: MapgenSettings,
     material: MaterialSettings,
     light: LightSettings,
 }
+
+#[derive(Event, Default)]
+pub struct NumCellsUpdated;
 
 pub struct UIPlugin;
 
 impl Plugin for UIPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         // Init EGUI
-        app.add_plugins(EguiPlugin);
+        // app.add_plugins(EguiPlugin);
+        app.add_event::<NumCellsUpdated>();
         let file = File::open("ui_state.json");
 
         if let Ok(f) = file {
@@ -57,12 +72,19 @@ impl Plugin for UIPlugin {
                 Ok(state) => {
                     app.insert_resource(state.material);
                     app.insert_resource(state.light);
+                    app.insert_resource(state.mapgen);
+
                     app.insert_state(state.renderer);
+                    app.insert_state(state.demo);
                 }
                 Err(_) => {
+                    // TODO Honestly just merge this and main
                     warn!("Could not find UI State settings. Initializing with empty state");
                     app.init_resource::<MaterialSettings>();
                     app.init_resource::<LightSettings>();
+                    app.init_resource::<MapgenSettings>();
+
+                    app.init_state::<DemoState>();
                     app.init_state::<RendererState>();
                 }
             };
@@ -70,16 +92,23 @@ impl Plugin for UIPlugin {
             warn!("Could not open UI state settings. Initiaizing with empty state");
             app.init_resource::<MaterialSettings>();
             app.init_resource::<LightSettings>();
+            app.init_resource::<MapgenSettings>();
+
+            app.init_state::<DemoState>();
             app.init_state::<RendererState>();
         }
 
         app.add_systems(
             Update,
             (
-                spawn_ui.before(spawn_basic_ui),
-                spawn_light_ui,
-                spawn_basic_ui.run_if(in_state(RendererState::Basic)),
+                // spawn_ui.before(spawn_basic_ui),
                 log_transitions,
+                // (
+                //     spawn_light_ui,
+                //     spawn_basic_ui.run_if(in_state(RendererState::Basic)),
+                // )
+                //     .run_if(in_state(DemoState::Renderer)),
+                // (spawn_mapgen_ui).run_if(in_state(DemoState::Mapgen)),
                 save_ui_state.run_if(on_event::<WindowCloseRequested>),
             ),
         );
@@ -89,39 +118,80 @@ impl Plugin for UIPlugin {
 // EguiContexts is an alias for a Query type
 fn spawn_ui(
     mut egui_context: EguiContexts,
-    state: Res<State<RendererState>>,
-    mut state_trans: ResMut<NextState<RendererState>>,
+    demo_state: Res<State<DemoState>>,
+    renderer_state: Res<State<RendererState>>,
+    mut render_trans: ResMut<NextState<RendererState>>,
+    mut demo_trans: ResMut<NextState<DemoState>>,
 ) {
     if let Some(context) = egui_context.try_ctx_mut() {
-        let mut curr_state = *state.get();
-        egui::Window::new("Render Controls")
+        // let mut curr_state = *renderer_state.get();
+
+        let mut curr_state = *demo_state.get();
+
+        egui::Window::new("Demo Controls")
             .vscroll(false)
             .resizable(true)
             .show(context, |ui| {
-                egui::ComboBox::from_label("Renderer")
+                egui::ComboBox::from_label("Demo")
                     .selected_text(format!("{:?}", curr_state))
                     .show_ui(ui, |ui| {
                         if ui
-                            .selectable_value(&mut curr_state, RendererState::Basic, "Basic")
+                            .selectable_value(&mut curr_state, DemoState::Renderer, "Renderer")
                             .changed()
                         {
-                            state_trans.set(RendererState::Basic);
+                            demo_trans.set(DemoState::Renderer);
                         }
 
                         if ui
-                            .selectable_value(&mut curr_state, RendererState::Toon, "Toon")
+                            .selectable_value(&mut curr_state, DemoState::Mapgen, "Mapgen")
                             .changed()
                         {
-                            state_trans.set(RendererState::Toon);
-                        }
-
-                        if ui
-                            .selectable_value(&mut curr_state, RendererState::Pbr, "PBR")
-                            .changed()
-                        {
-                            state_trans.set(RendererState::Pbr);
+                            demo_trans.set(DemoState::Mapgen);
                         }
                     });
+
+                match curr_state {
+                    DemoState::Renderer => {
+                        let mut renderer_state = *renderer_state.get();
+                        egui::ComboBox::from_label("Renderer")
+                            .selected_text(format!("{:?}", renderer_state))
+                            .show_ui(ui, |ui| {
+                                if ui
+                                    .selectable_value(
+                                        &mut renderer_state,
+                                        RendererState::Basic,
+                                        "Basic",
+                                    )
+                                    .changed()
+                                {
+                                    render_trans.set(RendererState::Basic);
+                                }
+
+                                if ui
+                                    .selectable_value(
+                                        &mut renderer_state,
+                                        RendererState::Toon,
+                                        "Toon",
+                                    )
+                                    .changed()
+                                {
+                                    render_trans.set(RendererState::Toon);
+                                }
+
+                                if ui
+                                    .selectable_value(
+                                        &mut renderer_state,
+                                        RendererState::Pbr,
+                                        "PBR",
+                                    )
+                                    .changed()
+                                {
+                                    render_trans.set(RendererState::Pbr);
+                                }
+                            });
+                    }
+                    DemoState::Mapgen => {}
+                }
             });
     }
 }
@@ -162,17 +232,42 @@ fn spawn_light_ui(mut egui_context: EguiContexts, mut light: ResMut<LightSetting
     }
 }
 
+fn spawn_mapgen_ui(mut egui_context: EguiContexts, mut mapgen_settings: ResMut<MapgenSettings>, mut events: EventWriter<NumCellsUpdated>) {
+    if let Some(context) = egui_context.try_ctx_mut() {
+        egui::Window::new("Mapgen controls")
+            .vscroll(false)
+            .resizable(true)
+            .show(context, |ui| {
+                let settings = mapgen_settings.as_mut();
+
+                ui.label("Num of cells");
+
+                ui.horizontal(|ui| {
+                    ui.add(egui::DragValue::new(&mut settings.num_cells));
+
+                    if ui.button("Regen cells").clicked() {
+                        events.send_default();
+                    }
+                })
+            });
+    }
+}
+
 fn save_ui_state(
     material_settings: Res<MaterialSettings>,
     light: Res<LightSettings>,
+    mapgen: Res<MapgenSettings>,
+    demo_state: Res<State<DemoState>>,
     renderer_state: Res<State<RendererState>>,
 ) {
     let file = File::create("ui_state.json");
     let state = UIState {
+        demo: *demo_state.get(),
         renderer: *renderer_state.get(), // rename to use the simple object builder
 
         material: *material_settings,
         light: *light,
+        mapgen: *mapgen,
     };
 
     if let Ok(f) = file {
