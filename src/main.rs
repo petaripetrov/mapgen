@@ -1,3 +1,5 @@
+#![recursion_limit = "1024"]
+
 mod mapgen;
 mod state;
 
@@ -50,6 +52,8 @@ fn inspector_ui(world: &mut World) {
                     world.send_event_default::<RegenCells>();
                 }
             });
+
+            bevy_inspector_egui::bevy_inspector::ui_for_entities(world, ui);
         });
     });
 }
