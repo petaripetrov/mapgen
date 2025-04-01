@@ -2,7 +2,7 @@ mod utils;
 
 use bevy::{
     asset::RenderAssetUsages,
-    math::vec3,
+    math::{vec2, vec3},
     prelude::*,
     render::mesh::{Indices, PrimitiveTopology},
 };
@@ -35,9 +35,9 @@ impl Plugin for MapgenPlugin {
     fn build(&self, app: &mut bevy::app::App) {
         app.insert_resource(MapgenSettings {
             rng_seed: 0xDEADBEEF,
-            grid_size: 50,
-            jitter: 0.5,
-            elevation_threshold: 0.5,
+            grid_size: 20,
+            jitter: 1.0,
+            elevation_threshold: 0.65,
         });
         app.insert_resource(Elevation::default());
 
@@ -96,7 +96,7 @@ fn gen_circles(
                 mapgen_settings.grid_size as f64,
                 mapgen_settings.grid_size as f64,
             ))
-            .set_lloyd_relaxation_iterations(5)
+            .set_lloyd_relaxation_iterations(50)
             .build()
             .unwrap();
 
@@ -123,7 +123,7 @@ fn gen_circles(
             let color = if elevation[idx] < mapgen_settings.elevation_threshold {
                 Color::hsl(240.0, 0.3, 0.5)
             } else {
-                Color::hsl(90.0, 0.2, 0.5)
+                Color::hsl(90.0, 0.3, 0.5)
             };
 
             mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
@@ -158,7 +158,7 @@ fn update_height_material(
             let new_color = if elevation.0[*idx] < mapgen_settings.elevation_threshold {
                 Color::hsl(240.0, 0.3, 0.5)
             } else {
-                Color::hsl(90.0, 0.2, 0.5)
+                Color::hsl(90.0, 0.3, 0.5)
             };
 
             material.color = new_color;
@@ -167,18 +167,16 @@ fn update_height_material(
 }
 
 fn setup(mut commands: Commands, mut events: EventWriter<RegenCells>) {
-    let mut translation = Transform::from_translation(vec3(10.0, 10.0, 0.0));
-    translation.scale = vec3(0.1, 0.1, 0.1);
-
     commands.spawn((
         Camera2d,
         OrthographicProjection {
             scale: 0.1,
+            viewport_origin: vec2(0.6, 0.5),
             ..OrthographicProjection::default_2d()
         },
         Transform {
-            translation: vec3(25.0, 25.0, 0.0),
-            // scale: vec3(0.5, 0.5, 1.0),
+            translation: vec3(12.5, 10.0, 0.0),
+            scale: vec3(0.4, 0.4, 1.0),
             ..Default::default()
         },
     ));
